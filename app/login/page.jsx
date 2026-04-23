@@ -21,7 +21,11 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await axios.post("/auth/parent-login", form);
+      const payload = {
+        ...form,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      };
+      const res = await axios.post("/auth/parent-login", payload);
       if (res.data.success) {
         localStorage.setItem("parentToken", res.data.token);
         localStorage.setItem("studentDetails", JSON.stringify(res.data.student));
@@ -33,7 +37,7 @@ export default function LoginPage() {
         title: "Login Failed",
         text: err.response?.data?.message || "Invalid credentials. Please try again.",
         confirmButtonColor: "#155dfc",
-        customClass: { popup: "rounded-xl text-sm" },
+        customClass: { popup: "rounded-lg text-sm" },
       });
     } finally {
       setLoading(false);
@@ -41,26 +45,58 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] sm:bg-[#f1f5f9] p-0 sm:p-4">
-      {/* Main Container */}
-      <div className="w-full max-w-[440px] bg-white min-h-screen sm:min-h-0 sm:rounded-2xl sm:shadow-sm border-none sm:border sm:border-slate-200 overflow-hidden">
+    <div className="min-h-screen flex bg-white sm:bg-[#f8fafc]">
+      {/* Desktop Left Panel - Hidden on Mobile */}
+      <div className="hidden lg:flex lg:w-1/2 relative bg-[#155dfc] items-center justify-center p-12 overflow-hidden">
+        {/* Abstract background elements */}
+        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-[#155dfc] to-[#0a45c7]" />
+        <div className="absolute -top-24 -left-24 w-96 h-96 bg-white/10 rounded-full blur-3xl" />
+        <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-[#000]/10 rounded-full blur-3xl" />
         
-        {/* Header Section */}
-        <div className="pt-12 pb-8 px-8 flex flex-col items-start">
-          <div className="w-12 h-12 bg-[#155dfc]/10 rounded-xl flex items-center justify-center mb-6">
-            <GraduationCap className="w-7 h-7 text-[#155dfc]" />
+        <div className="relative z-10 max-w-lg">
+          <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-8 shadow-xl">
+            <GraduationCap className="w-12 h-12 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Parent Portal</h1>
-          <p className="text-slate-500 text-sm mt-1">Sign in to track your student's progress</p>
+          <h2 className="text-5xl font-extrabold text-white leading-tight mb-6">
+            Everything you need <br />
+            <span className="text-blue-200">in one place.</span>
+          </h2>
+          <p className="text-lg text-blue-100/80 leading-relaxed mb-8">
+            Access your student's progress, photos, and support records with our simplified client portal. Secure, fast, and built for you.
+          </p>
+          
+          <div className="grid grid-cols-2 gap-6 pt-8 border-t border-white/10">
+            <div>
+              <p className="text-white font-bold text-2xl">100%</p>
+              <p className="text-blue-100/60 text-sm">Secure Access</p>
+            </div>
+            <div>
+              <p className="text-white font-bold text-2xl">24/7</p>
+              <p className="text-blue-100/60 text-sm">Support Sync</p>
+            </div>
+          </div>
         </div>
+      </div>
 
-        {/* Form Section */}
-        <div className="px-8 pb-12">
+      {/* Right Panel / Mobile View */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-8">
+        <div className="w-full max-w-[440px]">
+          
+          {/* Header Section - Shown only on Mobile/Small Desktop or styled specifically */}
+          <div className="mb-10 flex flex-col items-start">
+            <div className="lg:hidden w-12 h-12 bg-[#155dfc]/10 rounded-lg flex items-center justify-center mb-6">
+              <GraduationCap className="w-7 h-7 text-[#155dfc]" />
+            </div>
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Welcome back</h1>
+            <p className="text-slate-500 text-sm mt-2">Please enter your details to sign in to your portal</p>
+          </div>
+
+          {/* Form Section */}
           <form onSubmit={handleSubmit} className="space-y-5" autoComplete="off">
             
             {/* Email Field */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-600 ml-1">Parent Email</label>
+              <label className="text-xs font-semibold text-slate-600 ml-1">Client Email</label>
               <div className="relative group">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-[#155dfc] transition-colors" />
                 <input
@@ -70,7 +106,7 @@ export default function LoginPage() {
                   value={form.email}
                   onChange={handleChange}
                   placeholder="name@email.com"
-                  className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-[15px] focus:ring-4 focus:ring-[#155dfc]/5 focus:border-[#155dfc] transition-all outline-none text-slate-800 placeholder:text-slate-400"
+                  className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-[15px] focus:ring-4 focus:ring-[#155dfc]/5 focus:border-[#155dfc] transition-all outline-none text-slate-800 placeholder:text-slate-400 shadow-sm"
                 />
               </div>
             </div>
@@ -88,7 +124,7 @@ export default function LoginPage() {
                   value={form.uniqueCode}
                   onChange={handleChange}
                   placeholder="6-digit code"
-                  className="w-full pl-11 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl text-[15px] font-mono tracking-widest focus:ring-4 focus:ring-[#155dfc]/5 focus:border-[#155dfc] transition-all outline-none text-slate-800"
+                  className="w-full pl-11 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl text-[15px] font-mono tracking-widest focus:ring-4 focus:ring-[#155dfc]/5 focus:border-[#155dfc] transition-all outline-none text-slate-800 shadow-sm"
                 />
                 <button
                   type="button"
@@ -111,7 +147,7 @@ export default function LoginPage() {
                   required
                   value={form.dob}
                   onChange={handleChange}
-                  className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-[15px] focus:ring-4 focus:ring-[#155dfc]/5 focus:border-[#155dfc] transition-all outline-none text-slate-800"
+                  className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-[15px] focus:ring-4 focus:ring-[#155dfc]/5 focus:border-[#155dfc] transition-all outline-none text-slate-800 shadow-sm"
                 />
               </div>
             </div>
@@ -120,7 +156,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#155dfc] hover:bg-[#0e4ecf] text-white font-semibold py-4 rounded-xl shadow-sm transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2 mt-2"
+              className="w-full bg-[#155dfc] hover:bg-[#0e4ecf] text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-100 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2 mt-4"
             >
               {loading ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Signing in...</>

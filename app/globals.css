@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
-:root {
-  --font-inter: 'Inter', sans-serif;
+@theme {
+  --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+  --font-nunito: var(--font-nunito);
 }
+
 
 * {
   -webkit-tap-highlight-color: transparent;
@@ -10,7 +12,7 @@
 }
 
 body {
-  font-family: var(--font-inter), system-ui, sans-serif;
+  font-family: var(--font-nunito), system-ui, sans-serif;
   overscroll-behavior: none;
 }
 
@@ -30,7 +32,7 @@ html {
 /* Thin scrollbar */
 .thin-scrollbar::-webkit-scrollbar { width: 3px; }
 .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.thin-scrollbar::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 10px; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 8px; }
 
 /* Chat bubble tail */
 .bubble-me    { border-bottom-right-radius: 4px !important; }
