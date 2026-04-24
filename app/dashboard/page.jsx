@@ -2,11 +2,12 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  LogOut, User, Calendar, Mail, KeyRound, ImageIcon,
-  MessagesSquare, Send, Plus, ChevronRight,
-  GraduationCap, Ticket, Clock, CheckCircle2,
-} from "lucide-react";
+import { 
+  User, ImageIcon, LogOut, ShoppingBag, History, MessagesSquare, CheckCircle2, 
+  ChevronRight, UploadCloud, Loader2, X, Plus, Printer, Mail, Trash2, 
+  Send, Package, CreditCard, ArrowRight, ArrowLeft, Eye, BadgeCheck, Search,
+  GraduationCap, Calendar, KeyRound, Ticket, Clock, Download, Activity
+} from 'lucide-react';
 import useAxios from "@/hooks/useAxios";
 import Swal from "sweetalert2";
 
@@ -15,8 +16,10 @@ const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "—";
 
 const STATUS = {
-  Open:   { bg: "bg-blue-50",  text: "text-blue-600",  dot: "bg-blue-500" },
-  Closed: { bg: "bg-slate-100", text: "text-slate-500", dot: "bg-slate-400" },
+  Open:               { bg: "bg-blue-50",   text: "text-blue-600",   dot: "bg-blue-500"   },
+  'In Progress':      { bg: "bg-yellow-50", text: "text-yellow-700", dot: "bg-yellow-500" },
+  'Assigned to Staff':{ bg: "bg-purple-50", text: "text-purple-700", dot: "bg-purple-500" },
+  Closed:             { bg: "bg-slate-100", text: "text-slate-500",  dot: "bg-slate-400"  },
 };
 
 export default function DashboardPage() {
@@ -24,11 +27,23 @@ export default function DashboardPage() {
   const [tickets, setTickets] = useState([]);
   const [loadingTickets, setLoadingTickets] = useState(false);
   const [view, setView] = useState("home"); 
+  const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInputRef = useRef(null);
+
+  // Order flow state
+  const [orders, setOrders] = useState([]);
+  const [packages, setPackages] = useState([]);
+  const [orderStep, setOrderStep] = useState(1); // 1=select images, 2=choose package, 3=payment, 4=success
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [selectedPackage, setSelectedPackage] = useState(null);
+  const [orderNotes, setOrderNotes] = useState('');
+  const [placingOrder, setPlacingOrder] = useState(false);
 
   const router = useRouter();
   const axios = useAxios();
@@ -48,6 +63,8 @@ export default function DashboardPage() {
     if (cachedStudent) {
       setStudent(cachedStudent);
       fetchTickets(cachedStudent._id);
+      fetchOrders(cachedStudent._id);
+      fetchPackages();
       // Then refresh from API to get latest images
       refreshStudent(cachedStudent._id);
     } else {
@@ -58,6 +75,20 @@ export default function DashboardPage() {
   useEffect(() => {
     if (view === "ticket-detail") msgEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [selectedTicket, view]);
+
+  const fetchPackages = async () => {
+    try {
+      const res = await axios.get('/packages');
+      if (res.data.success) setPackages(res.data.data);
+    } catch {}
+  };
+
+  const fetchOrders = async (id) => {
+    try {
+      const res = await axios.get(`/orders/student/${id}`);
+      if (res.data.success) setOrders(res.data.data);
+    } catch {}
+  };
 
   const fetchTickets = async (id) => {
     setLoadingTickets(true);
@@ -122,6 +153,60 @@ export default function DashboardPage() {
     } catch (err) {
       Swal.fire("Error", err.response?.data?.message || "Failed to update photo", "error");
     }
+  };
+
+  const handleUploadImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await axios.post(`/events/students/${student._id}/upload-image`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (res.data.success) {
+        Swal.fire({ icon: 'success', title: 'Photo Uploaded', timer: 2000, showConfirmButton: false, toast: true, position: 'top-end' });
+        refreshStudent(student._id);
+      }
+    } catch (err) {
+      Swal.fire('Error', err.response?.data?.message || 'Upload failed', 'error');
+    } finally {
+      setUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  };
+
+  const placeOrder = async () => {
+    if (!selectedPackage || selectedImages.length === 0) return;
+    setPlacingOrder(true);
+    try {
+      const res = await axios.post('/orders', {
+        studentId: student._id,
+        packageId: selectedPackage._id,
+        selectedImages,
+        notes: orderNotes,
+      });
+      if (res.data.success) {
+        setOrders(prev => [res.data.data, ...prev]);
+        setOrderStep(4);
+      }
+    } catch (err) {
+      Swal.fire('Error', err.response?.data?.message || 'Failed to place order', 'error');
+    } finally { setPlacingOrder(false); }
+  };
+
+  const resetOrder = () => {
+    setOrderStep(1);
+    setSelectedImages([]);
+    setSelectedPackage(null);
+    setOrderNotes('');
+  };
+
+  const toggleImageSelection = (url) => {
+    setSelectedImages(prev =>
+      prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url]
+    );
   };
 
   const replyTicket = async (e) => {
@@ -249,13 +334,29 @@ export default function DashboardPage() {
               <h4 className="font-bold text-slate-900 text-xl">Need Assistance?</h4>
               <p className="text-slate-500 text-sm mt-1">Our support team is here to help with any questions or issues.</p>
             </div>
-            <button 
+            <button
               onClick={() => setView("tickets")}
               className="bg-white text-[#155dfc] font-bold px-6 py-3 rounded-lg border border-blue-100 hover:bg-blue-50 transition-colors whitespace-nowrap"
             >
               Contact Support
             </button>
           </div>
+
+          {/* Order Photos */}
+          <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-6 flex flex-col sm:flex-row items-center gap-4">
+            <div className="bg-indigo-600 p-3 rounded-lg shrink-0">
+              <ShoppingBag className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1 text-center sm:text-left">
+              <h4 className="font-bold text-slate-900">Order Your Photos</h4>
+              <p className="text-slate-500 text-sm mt-0.5">Select your favourite photos and choose a print or digital package.</p>
+            </div>
+            <button onClick={() => { resetOrder(); setView('order'); }}
+              className="bg-white text-indigo-700 font-bold px-6 py-3 rounded-lg border border-indigo-200 hover:bg-indigo-50 transition-colors whitespace-nowrap flex items-center gap-2">
+              <ShoppingBag className="w-4 h-4" /> Order Now
+            </button>
+          </div>
+
         </div>
 
         <div className="space-y-6">
@@ -265,27 +366,33 @@ export default function DashboardPage() {
                Recent Photos
              </h5>
              <div className="grid grid-cols-2 gap-3">
-               {photos.slice(0, 4).map(p => (
-                 <img key={p._id} src={p.uploadedImage} className="aspect-square rounded-lg object-cover border border-slate-100" />
+               {allPhotos.slice(0, 4).map(p => (
+                 <img key={p._id} src={p.url} className="aspect-square rounded-lg object-cover border border-slate-100" />
                ))}
-               {photos.length > 4 && (
+               {allPhotos.length > 4 && (
                  <button onClick={() => setView("photos")} className="aspect-square rounded-lg bg-slate-50 border border-slate-100 flex flex-col items-center justify-center text-slate-400 group hover:bg-slate-100 transition-colors">
-                   <span className="font-bold text-lg">+{photos.length - 4}</span>
+                   <span className="font-bold text-lg">+{allPhotos.length - 4}</span>
                    <span className="text-[10px] font-bold uppercase tracking-widest">View All</span>
                  </button>
                )}
              </div>
-             {photos.length === 0 && <p className="text-sm text-slate-400 text-center py-4">No photos available yet</p>}
+             {allPhotos.length === 0 && <p className="text-sm text-slate-400 text-center py-4">No photos available yet</p>}
            </div>
 
             <div className="bg-white rounded-lg border border-slate-200 p-6">
               <h5 className="font-bold text-slate-900 mb-4 flex items-center gap-2 text-sm uppercase tracking-wider">
-                <Ticket className="w-4 h-4 text-orange-500" /> 
-                Support Status
+                <Ticket className="w-4 h-4 text-orange-500" />
+                Activity
               </h5>
-              <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-100">
-                 <span className="text-sm font-bold text-orange-700">Open Tickets</span>
-                 <span className="bg-orange-500 text-white w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold">{openCount}</span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-100">
+                  <span className="text-sm font-bold text-orange-700">Open Tickets</span>
+                  <span className="bg-orange-500 text-white w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold">{openCount}</span>
+                </div>
+                <button onClick={() => setView('order-history')} className="w-full flex items-center justify-between p-3 bg-indigo-50 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors">
+                  <span className="text-sm font-bold text-indigo-700">My Orders</span>
+                  <span className="bg-indigo-500 text-white w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold">{orders.length}</span>
+                </button>
               </div>
             </div>
 
@@ -317,90 +424,501 @@ export default function DashboardPage() {
     </div>
   );
 
-  /* ── Photos View ── */
-  const PhotosView = () => (
-    <div className="flex flex-col flex-1 w-full px-6 py-8 pb-32 lg:pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="container mx-auto w-full">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
-          <div>
-            <h3 className="text-3xl font-extrabold text-slate-900 tracking-tight">Photo Collection</h3>
-            <p className="text-slate-500 mt-1">Choose your favorite photo to represent your profile.</p>
-          </div>
-          <div className="flex items-center gap-2 bg-white border border-slate-200 p-1 rounded-lg">
-            <span className="px-3 py-1.5 text-xs font-bold text-slate-400">Total: {allPhotos.length}</span>
-          </div>
-        </div>
+  /* ── Order Flow ── */
+  const ORDER_STATUS_COLORS = {
+    Pending:    'bg-amber-100 text-amber-700',
+    Processing: 'bg-blue-100 text-blue-700',
+    Completed:  'bg-emerald-100 text-emerald-700',
+    Cancelled:  'bg-slate-100 text-slate-500',
+  };
 
-        {allPhotos.length === 0 ? (
-          <div className="bg-white border border-dashed border-slate-300 rounded-lg p-20 text-center">
-            <div className="w-16 h-16 bg-slate-50 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <ImageIcon className="w-8 h-8 text-slate-300" />
+  const OrderView = () => (
+    <div className="flex flex-col flex-1 w-full px-6 py-8 pb-32 lg:pb-12 animate-in fade-in duration-500">
+      <div className="container mx-auto w-full">
+        {/* Steps header */}
+        {orderStep < 4 && (
+          <div className="mb-10">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-3xl font-extrabold text-slate-900 tracking-tight">Order Photos</h3>
+                <p className="text-slate-500 mt-1">Get high-quality prints and digital copies.</p>
+              </div>
+              <button onClick={() => setView('home')} className="p-2.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-400 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <p className="text-slate-400 font-medium">Your photo collection is currently empty.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6 lg:gap-8">
-            {allPhotos.map((photo) => (
-              <div key={photo._id} className="group flex flex-col gap-4">
-                <div 
-                  className="relative aspect-square cursor-pointer" 
-                  onClick={() => {
-                    if (photo.isBestImage) return;
-                    if (photo.isPrimary) {
-                      handleMarkBest(photo._id);
-                    } else {
-                      Swal.fire({
-                        title: 'Select as Best?',
-                        text: "To set this as your profile photo, it will become the primary photo for this event.",
-                        icon: 'question',
-                        showCancelButton: true,
-                        confirmButtonText: 'Yes, select it!',
-                        confirmButtonColor: '#155dfc'
-                      }).then((result) => {
-                        if (result.isConfirmed) {
-                          // For now, we only support marking primary ones as best easily.
-                          // But we can just show a message.
-                          Swal.fire('Note', 'Only primary photos can currently be set as Best. Our team is working on enabling this for additional photos.', 'info');
-                        }
-                      });
-                    }
-                  }}
-                >
-                  <img
-                    src={photo.url}
-                    alt={photo.eventName || ""}
-                    className={`w-full h-full rounded-lg object-cover transition-all duration-500 ${
-                      photo.isBestImage ? "ring-2 ring-[#155dfc] scale-[0.98] border border-[#155dfc]" : "border border-slate-200 group-hover:scale-105"
-                    }`}
-                  />
-                  
-                  {photo.isBestImage ? (
-                    <div className="absolute top-3 right-3 bg-[#155dfc] text-white p-2 rounded-lg border-2 border-white">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                  ) : (
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 rounded-lg flex items-center justify-center backdrop-blur-[2px]">
-                      <div className="bg-white text-[#155dfc] text-xs font-black px-6 py-3 rounded-lg transform translate-y-4 group-hover:translate-y-0 transition-transform">
-                        {photo.isPrimary ? "SELECT AS BEST" : "VIEW PHOTO"}
+            
+            <div className="flex items-center gap-3 mt-8 overflow-x-auto pb-2 scrollbar-hide">
+              {['Select Photos', 'Choose Package', 'Summary & Payment'].map((label, idx) => {
+                const step = idx + 1;
+                const done = orderStep > step;
+                const active = orderStep === step;
+                return (
+                  <div key={step} className="flex items-center gap-3 flex-1 min-w-[140px]">
+                    <div className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-xs font-bold transition-all border ${
+                      active 
+                        ? 'bg-[#155dfc] text-white border-[#155dfc] shadow-lg shadow-blue-100' 
+                        : done 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                          : 'bg-white text-slate-400 border-slate-200'
+                    }`}>
+                      <div className={`w-5 h-5 rounded-md flex items-center justify-center ${active ? 'bg-white/20' : done ? 'bg-emerald-200/50' : 'bg-slate-100'}`}>
+                        {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span>{step}</span>}
                       </div>
+                      <span className="whitespace-nowrap">{label}</span>
                     </div>
-                  )}
+                    {idx < 2 && <div className={`flex-1 h-[2px] min-w-[20px] rounded-full ${orderStep > step ? 'bg-emerald-200' : 'bg-slate-100'}`} />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Step 1: Select Images */}
+        {orderStep === 1 && (
+          <div className="space-y-8">
+            <div className="bg-blue-50 border border-blue-100 p-5 rounded-lg flex items-start gap-4">
+              <div className="bg-blue-500 p-2 rounded-lg text-white mt-0.5">
+                <ImageIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-blue-900 text-sm">Step 1: Choose Your Photos</h4>
+                <p className="text-blue-700 text-xs mt-1 leading-relaxed">Select the photos you want to include in your order. You can select multiple images from any event.</p>
+              </div>
+            </div>
+
+            {allPhotos.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-lg p-20 text-center">
+                <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                  <ImageIcon className="w-10 h-10 text-slate-300" />
                 </div>
-                <div className="px-2">
-                  <p className={`text-sm font-bold truncate ${photo.isBestImage ? "text-[#155dfc]" : "text-slate-800"}`}>
-                    {photo.eventName || "Event Photo"}
-                  </p>
-                  <div className="flex items-center justify-between mt-0.5">
-                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
-                      {fmtDate(photo.date)}
-                    </p>
-                    {!photo.isPrimary && (
-                      <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase">Additional</span>
-                    )}
+                <h4 className="text-lg font-bold text-slate-900">No Photos Found</h4>
+                <p className="text-slate-500 mt-2">There are no photos available for your profile yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-6">
+                {allPhotos.map(photo => {
+                  const sel = selectedImages.includes(photo.url);
+                  return (
+                    <button 
+                      key={photo._id} 
+                      onClick={() => toggleImageSelection(photo.url)}
+                      className={`group relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+                        sel 
+                          ? 'border-[#155dfc] ring-4 ring-[#155dfc]/10 scale-[0.98]' 
+                          : 'border-white bg-white shadow-sm hover:shadow-md hover:border-slate-200'
+                      }`}
+                    >
+                      <img src={photo.url} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                      
+                      {/* Selection Overlay */}
+                      <div className={`absolute inset-0 flex items-center justify-center transition-all ${sel ? 'bg-[#155dfc]/10' : 'bg-black/0 group-hover:bg-black/5'}`}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg transition-all transform ${sel ? 'bg-[#155dfc] scale-100' : 'bg-white/80 opacity-0 group-hover:opacity-100 scale-75'}`}>
+                          <CheckCircle2 className={`w-5 h-5 ${sel ? 'text-white' : 'text-slate-400'}`} />
+                        </div>
+                      </div>
+
+                      {/* Event Badge */}
+                      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                        <p className="text-[9px] font-bold text-white uppercase tracking-wider truncate">{photo.eventName}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="sticky bottom-8 lg:bottom-0 bg-white/80 backdrop-blur-md border border-slate-200 rounded-lg p-5 flex items-center justify-between shadow-xl shadow-slate-200/50 z-20">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm ${selectedImages.length > 0 ? 'bg-blue-100 text-[#155dfc]' : 'bg-slate-100 text-slate-400'}`}>
+                  {selectedImages.length}
+                </div>
+                <p className="text-sm font-bold text-slate-600">Selected Photos</p>
+              </div>
+              <button 
+                onClick={() => setOrderStep(2)} 
+                disabled={selectedImages.length === 0}
+                className="flex items-center gap-2 px-8 py-3 bg-[#155dfc] text-white font-bold rounded-lg hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale"
+              >
+                Continue to Packages <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Choose Package */}
+        {orderStep === 2 && (
+          <div className="space-y-8">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setOrderStep(1)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><ArrowLeft className="w-5 h-5" /></button>
+              <div>
+                <h4 className="font-bold text-slate-900">Step 2: Choose Your Package</h4>
+                <p className="text-slate-500 text-sm mt-0.5">Select a printing or digital package for your {selectedImages.length} photos.</p>
+              </div>
+            </div>
+
+            {packages.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-lg p-20 text-center">
+                <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                <p className="text-slate-500">No packages available at the moment.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {packages.map(pkg => {
+                  const sel = selectedPackage?._id === pkg._id;
+                  return (
+                    <button 
+                      key={pkg._id} 
+                      onClick={() => setSelectedPackage(pkg)}
+                      className={`relative flex flex-col text-left rounded-lg border-2 transition-all overflow-hidden ${
+                        sel 
+                          ? 'border-[#155dfc] bg-blue-50 ring-4 ring-blue-100/50' 
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-lg'
+                      }`}
+                    >
+                      <div className="p-6 flex-1">
+                        <div className="flex justify-between items-start mb-4">
+                          <div className={`p-2 rounded-lg ${sel ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                            <Package className="w-5 h-5" />
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-black text-slate-900">${parseFloat(pkg.price).toFixed(2)}</p>
+                          </div>
+                        </div>
+                        
+                        <h5 className="text-xl font-extrabold text-slate-900 mb-2">{pkg.name}</h5>
+                        {pkg.description && <p className="text-sm text-slate-500 mb-6 line-clamp-2">{pkg.description}</p>}
+                        
+                        <div className="space-y-3">
+                          {pkg.features?.map((f, i) => (
+                            <div key={i} className="flex items-start gap-2.5">
+                              <div className="mt-1 bg-emerald-100 text-emerald-600 p-0.5 rounded-md">
+                                <CheckCircle2 className="w-3 h-3" />
+                              </div>
+                              <span className="text-xs font-bold text-slate-700 leading-tight">{f}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className={`px-6 py-4 border-t ${sel ? 'bg-blue-100/50 border-blue-200' : 'bg-slate-50 border-slate-100'}`}>
+                        <div className={`w-full py-2.5 rounded-md flex items-center justify-center gap-2 font-black text-xs uppercase tracking-widest transition-colors ${
+                          sel ? 'bg-[#155dfc] text-white shadow-md shadow-blue-200' : 'bg-white text-slate-400 border border-slate-200 group-hover:text-slate-600'
+                        }`}>
+                          {sel ? <><CheckCircle2 className="w-4 h-4" /> Selected</> : 'Select Package'}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-6 border-t border-slate-200">
+              <button onClick={() => setOrderStep(1)} className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-700 transition-colors">
+                <ArrowLeft className="w-4 h-4" /> Back to Photos
+              </button>
+              <button 
+                onClick={() => setOrderStep(3)} 
+                disabled={!selectedPackage}
+                className="flex items-center gap-2 px-10 py-3.5 bg-[#155dfc] text-white font-bold rounded-lg hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale"
+              >
+                Review Summary <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Payment Summary */}
+        {orderStep === 3 && (
+          <div className="max-w-4xl mx-auto space-y-8">
+             <div className="flex items-center gap-4">
+              <button onClick={() => setOrderStep(2)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><ArrowLeft className="w-5 h-5" /></button>
+              <div>
+                <h4 className="font-bold text-slate-900">Step 3: Summary & Confirmation</h4>
+                <p className="text-slate-500 text-sm mt-0.5">Please review your order details before placing it.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-6">
+                {/* Package Card */}
+                <div className="bg-white border border-slate-200 rounded-lg p-6">
+                  <h5 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                    <Package className="w-4 h-4" /> Chosen Package
+                  </h5>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-xl font-black text-slate-900">{selectedPackage?.name}</p>
+                      <p className="text-sm text-slate-500 mt-1">{selectedPackage?.description}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-[#155dfc]">${parseFloat(selectedPackage?.price || 0).toFixed(2)}</p>
+                    </div>
                   </div>
                 </div>
+
+                {/* Selected Images Gallery */}
+                <div className="bg-white border border-slate-200 rounded-lg p-6">
+                  <h5 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4" /> Photos in Order ({selectedImages.length})
+                  </h5>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                    {selectedImages.map((url, i) => (
+                      <div key={i} className="aspect-square rounded-lg border border-slate-100 overflow-hidden bg-slate-50">
+                        <img src={url} alt="" className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div className="bg-white border border-slate-200 rounded-lg p-6">
+                   <h5 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Special Instructions</h5>
+                   <textarea 
+                    value={orderNotes} 
+                    onChange={e => setOrderNotes(e.target.value)} 
+                    rows={3}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-4 focus:ring-blue-50 transition-all resize-none"
+                    placeholder="Any specific delivery or printing instructions..." 
+                  />
+                </div>
               </div>
-            ))}
+
+              <div className="space-y-6">
+                {/* Summary Panel */}
+                <div className="bg-slate-900 rounded-lg p-6 text-white sticky top-28 shadow-2xl shadow-slate-300">
+                  <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 mb-6">Final Total</h4>
+                  
+                  <div className="space-y-4 mb-8">
+                    <div className="flex justify-between text-slate-400 text-sm">
+                      <span>Subtotal</span>
+                      <span className="font-bold text-white">${parseFloat(selectedPackage?.price || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-400 text-sm">
+                      <span>Service Fee</span>
+                      <span className="font-bold text-white">$0.00</span>
+                    </div>
+                    <div className="h-px bg-slate-800" />
+                    <div className="flex justify-between text-2xl font-black">
+                      <span>Total</span>
+                      <span className="text-blue-400">${parseFloat(selectedPackage?.price || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-800/50 rounded-lg p-4 mb-8 border border-slate-700/50">
+                    <div className="flex gap-3">
+                      <CreditCard className="w-5 h-5 text-blue-400 shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-white uppercase">Demo Payment</p>
+                        <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">Place order now, pay later via cash or transfer. Our team will contact you.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={placeOrder} 
+                    disabled={placingOrder}
+                    className="w-full py-4 bg-blue-600 text-white font-black rounded-lg hover:bg-blue-500 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg shadow-blue-900/20"
+                  >
+                    {placingOrder ? <><Loader2 className="w-5 h-5 animate-spin" /> PLACING ORDER...</> : <><BadgeCheck className="w-5 h-5" /> COMPLETE ORDER</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Success */}
+        {orderStep === 4 && (
+          <div className="max-w-xl mx-auto py-20 animate-in zoom-in duration-500">
+            <div className="relative">
+              <div className="absolute inset-0 bg-emerald-500 rounded-full blur-3xl opacity-10 animate-pulse" />
+              <div className="relative bg-white border border-slate-200 rounded-lg p-12 text-center shadow-xl">
+                <div className="w-24 h-24 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto mb-8 transform rotate-3">
+                  <BadgeCheck className="w-12 h-12 text-emerald-600" />
+                </div>
+                
+                <h3 className="text-3xl font-black text-slate-900 mb-4">Order Received!</h3>
+                <p className="text-slate-500 text-lg leading-relaxed mb-10">We've received your photo order. Our team will review the details and contact you shortly to finalize payment and delivery.</p>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => { resetOrder(); setView('order-history'); }}
+                    className="w-full py-4 bg-slate-100 text-slate-700 font-black rounded-lg hover:bg-slate-200 transition-all text-sm uppercase tracking-widest"
+                  >
+                    View Status
+                  </button>
+                  <button 
+                    onClick={() => { resetOrder(); setView('home'); }}
+                    className="w-full py-4 bg-[#155dfc] text-white font-black rounded-lg hover:bg-blue-700 transition-all text-sm uppercase tracking-widest shadow-lg shadow-blue-100"
+                  >
+                    Back Home
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  /* ── Order History ── */
+  const OrderHistoryView = () => (
+    <div className="flex flex-col flex-1 w-full p-6 lg:p-8 animate-in fade-in duration-500">
+      <div className="w-full">
+        {selectedOrder ? (
+          <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+            {/* Detail Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+              <div>
+                <button 
+                  onClick={() => setSelectedOrder(null)}
+                  className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors mb-4"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Back to Orders
+                </button>
+                <h2 className="text-xl font-black text-slate-900">Order Details</h2>
+                <p className="text-xs font-bold text-slate-400 mt-1">#{selectedOrder._id.toUpperCase()}</p>
+              </div>
+              <div className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${ORDER_STATUS_COLORS[selectedOrder.status] || 'bg-slate-100 text-slate-500'}`}>
+                {selectedOrder.status}
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {/* Package Info */}
+              <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <Package className="w-4 h-4 text-slate-400" />
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Package Details</h4>
+                </div>
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h4 className="text-lg font-black text-slate-900">{selectedOrder.package?.name}</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">{selectedOrder.selectedImages?.length} photos included</p>
+                  </div>
+                  <p className="text-2xl font-black text-[#155dfc]">${selectedOrder.totalAmount?.toFixed(2)}</p>
+                </div>
+                <div className="pt-4 border-t border-slate-100 flex justify-between items-center text-xs">
+                  <span className="font-bold text-slate-500">Payment Status</span>
+                  <span className="font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded">{selectedOrder.paymentStatus}</span>
+                </div>
+              </div>
+
+              {selectedOrder.notes && (
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-5 shadow-sm">
+                  <p className="text-[10px] font-black text-amber-600 uppercase mb-2">My Notes</p>
+                  <p className="text-xs text-amber-900 leading-relaxed italic">"{selectedOrder.notes}"</p>
+                </div>
+              )}
+
+              {/* Photos Grid - Full Width */}
+              <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
+                 <div className="flex items-center justify-between mb-6">
+                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Selected Photos ({selectedOrder.selectedImages?.length})</h4>
+                 </div>
+                 <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4">
+                    {selectedOrder.selectedImages?.map((url, i) => (
+                      <div key={i} className="aspect-square rounded-lg border border-slate-200 overflow-hidden bg-slate-50 shadow-sm relative group">
+                        <img src={url} alt="" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <a href={url} target="_blank" rel="noreferrer" className="p-1.5 bg-white rounded-full shadow-lg text-slate-900">
+                            <Eye className="w-4 h-4" />
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+              <div>
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight">Order History</h3>
+                <p className="text-slate-500 text-sm mt-1">Review and manage your previous photo packages.</p>
+              </div>
+              <button 
+                onClick={() => { resetOrder(); setView('order'); }}
+                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#155dfc] text-white font-bold rounded-lg text-sm hover:bg-blue-700 shadow-sm transition-all whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" /> Place New Order
+              </button>
+            </div>
+
+            {orders.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-lg p-16 text-center shadow-sm">
+                <ShoppingBag className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+                <h4 className="text-lg font-black text-slate-800">No Orders Yet</h4>
+                <p className="text-sm text-slate-400 mt-2">You haven't placed any orders yet. Start by exploring our photo packages.</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/50 border-b border-slate-200">
+                        <th className="py-4 px-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Order Details</th>
+                        <th className="py-4 px-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Photos</th>
+                        <th className="py-4 px-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                        <th className="py-4 px-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Amount</th>
+                        <th className="py-4 px-6"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.map(o => (
+                        <tr 
+                          key={o._id} 
+                          onClick={() => setSelectedOrder(o)}
+                          className="group hover:bg-slate-50 transition-colors cursor-pointer"
+                        >
+                          <td className="py-4 px-6">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 group-hover:scale-105 transition-transform">
+                                <Package className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold text-slate-900">{o.package?.name}</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">#{o._id.slice(-8).toUpperCase()} • {new Date(o.createdAt).toLocaleDateString()}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-4 px-6">
+                            <div className="flex -space-x-2">
+                              {o.selectedImages?.slice(0, 3).map((url, i) => (
+                                <div key={i} className="w-8 h-8 rounded-full border-2 border-white overflow-hidden shadow-sm">
+                                  <img src={url} alt="" className="w-full h-full object-cover" />
+                                </div>
+                              ))}
+                              {o.selectedImages?.length > 3 && (
+                                <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 shadow-sm">
+                                  +{o.selectedImages.length - 3}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className={`inline-flex px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${ORDER_STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-500'}`}>
+                              {o.status}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            <p className="text-sm font-black text-slate-900">${o.totalAmount?.toFixed(2)}</p>
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 transition-colors inline-block" />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -473,7 +991,8 @@ export default function DashboardPage() {
 
         <nav className="flex-1 px-6 py-6 space-y-2">
           <SidebarLink active={view === "home"} onClick={() => setView("home")} icon={<User className="w-5 h-5" />} label="Overview" />
-          <SidebarLink active={view === "photos"} onClick={() => setView("photos")} icon={<ImageIcon className="w-5 h-5" />} label="Photo Collection" />
+          <SidebarLink active={view === "order"} onClick={() => { resetOrder(); setView("order"); }} icon={<ShoppingBag className="w-5 h-5" />} label="Order Photos" />
+          <SidebarLink active={view === "order-history"} onClick={() => { setSelectedOrder(null); setView("order-history"); }} icon={<History className="w-5 h-5" />} label="Order History" />
           <SidebarLink active={view === "tickets" || view === "new-ticket" || view === "ticket-detail"} onClick={() => setView("tickets")} icon={<MessagesSquare className="w-5 h-5" />} label="Support Hub" badge={openCount} />
         </nav>
 
@@ -495,7 +1014,7 @@ export default function DashboardPage() {
         <header className="hidden lg:flex items-center justify-between px-10 py-5 bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40">
           <div>
             <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">
-              {view === "home" ? "Portal Overview" : view === "photos" ? "Image Management" : view === "tickets" ? "Customer Support" : "Details"}
+              {view === "home" ? "Portal Overview" : view === "order" ? "Order Photos" : view === "order-history" ? "My Orders" : view === "tickets" ? "Customer Support" : "Details"}
             </h2>
           </div>
           <div className="flex items-center gap-6">
@@ -518,7 +1037,8 @@ export default function DashboardPage() {
         <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50">
           <div className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around">
             <NavBtn active={view === "home"} onClick={() => setView("home")} icon={<User className="w-6 h-6" />} label="Profile" />
-            <NavBtn active={view === "photos"} onClick={() => setView("photos")} icon={<ImageIcon className="w-6 h-6" />} label="Photos" />
+            <NavBtn active={view === "order"} onClick={() => { resetOrder(); setView("order"); }} icon={<ShoppingBag className="w-6 h-6" />} label="Order" />
+            <NavBtn active={view === "order-history"} onClick={() => { setSelectedOrder(null); setView("order-history"); }} icon={<History className="w-6 h-6" />} label="History" />
             <NavBtn active={view === "tickets"} onClick={() => setView("tickets")} icon={<MessagesSquare className="w-6 h-6" />} label="Support" badge={openCount} />
             <button onClick={logout} className="flex flex-col items-center gap-1 text-slate-400 hover:text-red-500 transition-colors">
               <LogOut className="w-6 h-6" />
@@ -528,7 +1048,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Mobile Header for detail views */}
-        {view !== "home" && view !== "tickets" && view !== "photos" && (
+        {view !== "home" && view !== "tickets" && (
           <div className="lg:hidden p-4 bg-white border-b border-slate-100 flex items-center gap-4">
             <button onClick={() => setView(view === "ticket-detail" ? "tickets" : "tickets")} className="p-2 hover:bg-slate-50 rounded-lg transition-colors"><ChevronRight className="w-5 h-5 rotate-180 text-slate-600" /></button>
             <h2 className="font-bold text-slate-900 truncate">{view === "new-ticket" ? "Create Ticket" : selectedTicket?.subject}</h2>
@@ -539,7 +1059,8 @@ export default function DashboardPage() {
         <main className={`flex-1 overflow-y-auto ${view === "home" ? "" : "lg:p-8"}`}>
           <div className="w-full">
             {view === "home" && <HomeView />}
-            {view === "photos" && <PhotosView />}
+            {view === "order" && <OrderView />}
+            {view === "order-history" && <OrderHistoryView />}
             {view === "tickets" && <TicketsView />}
             {view === "new-ticket" && <NewTicketForm subject={subject} setSubject={setSubject} message={message} setMessage={setMessage} onSubmit={createTicket} loading={submitting} />}
             {view === "ticket-detail" && <TicketDetail selectedTicket={selectedTicket} replyText={replyText} setReplyText={setReplyText} onSubmit={replyTicket} loading={submitting} msgEnd={msgEnd} />}
@@ -665,7 +1186,7 @@ function TicketDetail({ selectedTicket, replyText, setReplyText, onSubmit, loadi
         <div ref={msgEnd} />
       </div>
 
-      {selectedTicket.status === "Open" ? (
+      {selectedTicket.status !== "Closed" ? (
         <div className="bg-white p-4 border-t border-slate-200">
           <form onSubmit={onSubmit} className="flex gap-3">
             <input 
