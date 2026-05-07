@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import useAxios from "@/hooks/useAxios";
 import Swal from "sweetalert2";
+import NotificationBell from "@/components/NotificationBell";
+import PhotoLightbox from "@/components/PhotoLightbox";
 
 /* ─── tiny helpers ─────────────────────────────────────── */
 const fmtDate = (d) =>
@@ -45,9 +47,37 @@ export default function DashboardPage() {
   const [orderNotes, setOrderNotes] = useState('');
   const [placingOrder, setPlacingOrder] = useState(false);
 
+  // Shipping address (collected at checkout)
+  const [shipAddr, setShipAddr] = useState({
+    fullName: '', phone: '', line1: '', line2: '',
+    city: '', region: '', postalCode: '', country: 'Canada',
+  });
+  const [matchedZone, setMatchedZone] = useState(null); // { _id, name, charge }
+  const [zoneChecking, setZoneChecking] = useState(false);
+  const [zoneChecked, setZoneChecked] = useState(false); // flips true after first match attempt
+
+  // Lightbox / slideshow state
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+
   const router = useRouter();
   const axios = useAxios();
   const msgEnd = useRef(null);
+
+  // Map a notification → which dashboard view to show. Used by both bell instances.
+  const handleNotificationClick = (n) => {
+    const link = n?.link || '';
+    if (link.includes('order-history') || n?.type === 'order_status' || n?.relatedOrder) {
+      setSelectedOrder(null);
+      setView('order-history');
+      return;
+    }
+    if (link.includes('tickets') || n?.type === 'ticket_created' || n?.type === 'ticket_reply') {
+      setSelectedTicket(null);
+      setView('tickets');
+      return;
+    }
+    setView('home');
+  };
 
   useEffect(() => {
     const token = localStorage.getItem("parentToken");
@@ -177,8 +207,48 @@ export default function DashboardPage() {
     }
   };
 
+  // Debounced zone match — fires whenever the city / postal / country changes.
+  useEffect(() => {
+    if (orderStep !== 3) return;
+    const { city, postalCode, country, region } = shipAddr;
+    if (!city && !postalCode && !country) {
+      setMatchedZone(null);
+      setZoneChecked(false);
+      return;
+    }
+    let cancelled = false;
+    setZoneChecking(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await axios.post('/shipping-zones/match', { city, postalCode, country, region });
+        if (cancelled) return;
+        if (res.data.success && res.data.matched) {
+          setMatchedZone(res.data.zone);
+        } else {
+          setMatchedZone(null);
+        }
+        setZoneChecked(true);
+      } catch {
+        if (!cancelled) { setMatchedZone(null); setZoneChecked(true); }
+      } finally {
+        if (!cancelled) setZoneChecking(false);
+      }
+    }, 450);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [shipAddr.city, shipAddr.postalCode, shipAddr.country, shipAddr.region, orderStep]);
+
   const placeOrder = async () => {
     if (!selectedPackage || selectedImages.length === 0) return;
+    // Light validation — at minimum a name + line1 + city for delivery, OR all blank for pickup.
+    const anyAddr = Object.values(shipAddr).some(v => v && v.trim());
+    if (anyAddr) {
+      const required = ['fullName', 'line1', 'city'];
+      for (const k of required) {
+        if (!shipAddr[k]?.trim()) {
+          return Swal.fire('Missing Address Info', 'Please fill in name, street and city — or clear the address fields for school pickup.', 'warning');
+        }
+      }
+    }
     setPlacingOrder(true);
     try {
       const res = await axios.post('/orders', {
@@ -186,6 +256,7 @@ export default function DashboardPage() {
         packageId: selectedPackage._id,
         selectedImages,
         notes: orderNotes,
+        shippingAddress: anyAddr ? shipAddr : undefined,
       });
       if (res.data.success) {
         setOrders(prev => [res.data.data, ...prev]);
@@ -272,9 +343,9 @@ export default function DashboardPage() {
 
   /* ── Home View ── */
   const HomeView = () => (
-    <div className="flex flex-col pb-20 w-full animate-in fade-in duration-500">
+    <div className="flex flex-col pb-24 lg:pb-20 w-full animate-in fade-in duration-500">
       <div className="bg-white border-b border-slate-200">
-        <div className="container mx-auto px-6 py-12 lg:py-16">
+        <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-10 lg:py-16">
           <div className="flex flex-col lg:flex-row items-center lg:items-start gap-8 lg:gap-12 text-center lg:text-left">
             <div className="relative group">
               {student.uploadedImage ? (
@@ -318,13 +389,37 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="container mx-auto w-full px-6 py-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
+      <div className="container mx-auto w-full px-4 sm:px-6 py-6 sm:py-10 grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+        <div className="lg:col-span-2 space-y-5 sm:space-y-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <DetailCard label="Access Code" value={student.uniqueCode} icon={<KeyRound className="w-5 h-5" />} color="text-blue-600" />
             <DetailCard label="Birthday" value={fmtDate(student.dob)} icon={<Calendar className="w-5 h-5" />} color="text-slate-700" />
           </div>
           <DetailCardFull label="Client Email Address" value={student.parentEmail} icon={<Mail className="w-6 h-6" />} />
+
+          {student.school?.orderDeadline && (() => {
+            const deadline = new Date(student.school.orderDeadline);
+            const now = new Date();
+            const daysLeft = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+            const past = daysLeft < 0;
+            const ship = student.school.shippingCharge || 0;
+            return (
+              <div className={`rounded-lg border p-5 flex items-start gap-4 ${past ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                <div className={`p-2.5 rounded-lg shrink-0 ${past ? 'bg-amber-500' : 'bg-emerald-500'}`}>
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${past ? 'text-amber-700' : 'text-emerald-700'}`}>Order Deadline</p>
+                  <p className="font-extrabold text-slate-900 text-lg mt-0.5">{fmtDate(deadline)}</p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    {past
+                      ? `Deadline passed — orders now include a $${ship.toFixed(2)} shipping & handling charge.`
+                      : `${daysLeft === 0 ? 'Last day!' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`} to order without shipping fees.`}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
           
           <div className="bg-[#155dfc]/5 border border-[#155dfc]/10 rounded-lg p-8 flex flex-col sm:flex-row items-center gap-6">
             <div className="bg-[#155dfc] p-4 rounded-lg">
@@ -366,11 +461,18 @@ export default function DashboardPage() {
                Recent Photos
              </h5>
              <div className="grid grid-cols-2 gap-3">
-               {allPhotos.slice(0, 4).map(p => (
-                 <img key={p._id} src={p.url} className="aspect-square rounded-lg object-cover border border-slate-100" />
+               {allPhotos.slice(0, 4).map((p, i) => (
+                 <button
+                   key={p._id}
+                   type="button"
+                   onClick={() => setLightboxIndex(i)}
+                   className="aspect-square rounded-lg overflow-hidden border border-slate-100 cursor-zoom-in group"
+                 >
+                   <img src={p.url} alt="" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                 </button>
                ))}
                {allPhotos.length > 4 && (
-                 <button onClick={() => setView("photos")} className="aspect-square rounded-lg bg-slate-50 border border-slate-100 flex flex-col items-center justify-center text-slate-400 group hover:bg-slate-100 transition-colors">
+                 <button onClick={() => setLightboxIndex(4)} className="aspect-square rounded-lg bg-slate-50 border border-slate-100 flex flex-col items-center justify-center text-slate-400 group hover:bg-slate-100 transition-colors">
                    <span className="font-bold text-lg">+{allPhotos.length - 4}</span>
                    <span className="text-[10px] font-bold uppercase tracking-widest">View All</span>
                  </button>
@@ -433,22 +535,36 @@ export default function DashboardPage() {
   };
 
   const OrderView = () => (
-    <div className="flex flex-col flex-1 w-full px-6 py-8 pb-32 lg:pb-12 animate-in fade-in duration-500">
+    <div className="flex flex-col flex-1 w-full px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 pb-28 lg:pb-12 animate-in fade-in duration-500">
       <div className="container mx-auto w-full">
         {/* Steps header */}
         {orderStep < 4 && (
-          <div className="mb-10">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-3xl font-extrabold text-slate-900 tracking-tight">Order Photos</h3>
-                <p className="text-slate-500 mt-1">Get high-quality prints and digital copies.</p>
-              </div>
-              <button onClick={() => setView('home')} className="p-2.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-400 transition-colors">
+          <div className="mb-4 sm:mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Order Photos</h3>
+              <button onClick={() => setView('home')} className="p-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-400 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
-            <div className="flex items-center gap-3 mt-8 overflow-x-auto pb-2 scrollbar-hide">
+
+            {/* Deadline banner — kept simple so parents always see the cut-off */}
+            {student.school?.orderDeadline && (() => {
+              const deadline = new Date(student.school.orderDeadline);
+              const past = new Date() > deadline;
+              const ship = student.school.shippingCharge || 0;
+              return (
+                <div className={`mb-4 rounded-lg px-4 py-2.5 text-xs sm:text-sm font-bold flex items-center justify-between gap-2 ${past ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+                  <span className="flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    {past
+                      ? `Deadline passed — orders include $${ship.toFixed(2)} shipping`
+                      : `Order by ${fmtDate(deadline)}`}
+                  </span>
+                </div>
+              );
+            })()}
+
+            <div className="flex items-center gap-3 mt-4 overflow-x-auto pb-2 scrollbar-hide">
               {['Select Photos', 'Choose Package', 'Summary & Payment'].map((label, idx) => {
                 const step = idx + 1;
                 const done = orderStep > step;
@@ -477,59 +593,80 @@ export default function DashboardPage() {
 
         {/* Step 1: Select Images */}
         {orderStep === 1 && (
-          <div className="space-y-8">
-            <div className="bg-blue-50 border border-blue-100 p-5 rounded-lg flex items-start gap-4">
-              <div className="bg-blue-500 p-2 rounded-lg text-white mt-0.5">
-                <ImageIcon className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-bold text-blue-900 text-sm">Step 1: Choose Your Photos</h4>
-                <p className="text-blue-700 text-xs mt-1 leading-relaxed">Select the photos you want to include in your order. You can select multiple images from any event.</p>
-              </div>
-            </div>
-
+          <div className="space-y-5">
             {allPhotos.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-lg p-20 text-center">
-                <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
-                  <ImageIcon className="w-10 h-10 text-slate-300" />
+              <div className="bg-white border border-slate-200 rounded-lg p-16 text-center">
+                <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <ImageIcon className="w-8 h-8 text-slate-300" />
                 </div>
-                <h4 className="text-lg font-bold text-slate-900">No Photos Found</h4>
-                <p className="text-slate-500 mt-2">There are no photos available for your profile yet.</p>
+                <p className="text-slate-500 font-medium">No photos available yet.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-6">
-                {allPhotos.map(photo => {
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-6">
+                {allPhotos.map((photo, i) => {
                   const sel = selectedImages.includes(photo.url);
                   return (
-                    <button 
-                      key={photo._id} 
-                      onClick={() => toggleImageSelection(photo.url)}
-                      className={`group relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                        sel 
-                          ? 'border-[#155dfc] ring-4 ring-[#155dfc]/10 scale-[0.98]' 
-                          : 'border-white bg-white shadow-sm hover:shadow-md hover:border-slate-200'
+                    <div
+                      key={photo._id}
+                      className={`group relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-all bg-slate-100 ${
+                        sel
+                          ? 'border-[#155dfc] ring-4 ring-[#155dfc]/10'
+                          : 'border-transparent shadow-sm hover:shadow-md'
                       }`}
                     >
-                      <img src={photo.url} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                      
+                      {/* Tap = open lightbox on mobile, select on desktop. */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof window !== 'undefined' && window.innerWidth < 768) {
+                            setLightboxIndex(i);
+                          } else {
+                            toggleImageSelection(photo.url);
+                          }
+                        }}
+                        className="absolute inset-0 w-full h-full"
+                        aria-label={sel ? 'Deselect photo' : 'Select photo'}
+                      >
+                        <img src={photo.url} alt="" className="w-full h-full object-contain" />
+                      </button>
+
                       {/* Selection Overlay */}
-                      <div className={`absolute inset-0 flex items-center justify-center transition-all ${sel ? 'bg-[#155dfc]/10' : 'bg-black/0 group-hover:bg-black/5'}`}>
+                      <div className={`pointer-events-none absolute inset-0 flex items-center justify-center transition-all ${sel ? 'bg-[#155dfc]/10' : 'bg-black/0 group-hover:bg-black/5'}`}>
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg transition-all transform ${sel ? 'bg-[#155dfc] scale-100' : 'bg-white/80 opacity-0 group-hover:opacity-100 scale-75'}`}>
                           <CheckCircle2 className={`w-5 h-5 ${sel ? 'text-white' : 'text-slate-400'}`} />
                         </div>
                       </div>
 
-                      {/* Event Badge */}
-                      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
-                        <p className="text-[9px] font-bold text-white uppercase tracking-wider truncate">{photo.eventName}</p>
-                      </div>
-                    </button>
+                      {/* Mobile: persistent select toggle (top-left) */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleImageSelection(photo.url); }}
+                        className={`md:hidden absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-full shadow-md flex items-center justify-center transition-colors ${
+                          sel ? 'bg-[#155dfc] text-white' : 'bg-white/90 text-slate-600'
+                        }`}
+                        aria-label={sel ? 'Deselect' : 'Select'}
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                      </button>
+
+                      {/* Zoom button (always visible on mobile) */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); }}
+                        className="absolute top-1.5 right-1.5 z-10 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                        title="View full size"
+                        aria-label="View full size"
+                      >
+                        <Eye className="w-4 h-4 text-slate-700" />
+                      </button>
+
+                    </div>
                   );
                 })}
               </div>
             )}
 
-            <div className="sticky bottom-8 lg:bottom-0 bg-white/80 backdrop-blur-md border border-slate-200 rounded-lg p-5 flex items-center justify-between shadow-xl shadow-slate-200/50 z-20">
+            <div className="sticky bottom-24 lg:bottom-4 bg-white/95 backdrop-blur-md border border-slate-200 rounded-lg p-4 sm:p-5 flex items-center justify-between gap-3 shadow-xl shadow-slate-200/50 z-20">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm ${selectedImages.length > 0 ? 'bg-blue-100 text-[#155dfc]' : 'bg-slate-100 text-slate-400'}`}>
                   {selectedImages.length}
@@ -552,10 +689,7 @@ export default function DashboardPage() {
           <div className="space-y-8">
             <div className="flex items-center gap-4">
               <button onClick={() => setOrderStep(1)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><ArrowLeft className="w-5 h-5" /></button>
-              <div>
-                <h4 className="font-bold text-slate-900">Step 2: Choose Your Package</h4>
-                <p className="text-slate-500 text-sm mt-0.5">Select a printing or digital package for your {selectedImages.length} photos.</p>
-              </div>
+              <h4 className="font-bold text-slate-900">Choose Your Package</h4>
             </div>
 
             {packages.length === 0 ? (
@@ -635,10 +769,7 @@ export default function DashboardPage() {
           <div className="max-w-4xl mx-auto space-y-8">
              <div className="flex items-center gap-4">
               <button onClick={() => setOrderStep(2)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><ArrowLeft className="w-5 h-5" /></button>
-              <div>
-                <h4 className="font-bold text-slate-900">Step 3: Summary & Confirmation</h4>
-                <p className="text-slate-500 text-sm mt-0.5">Please review your order details before placing it.</p>
-              </div>
+              <h4 className="font-bold text-slate-900">Summary</h4>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -666,44 +797,138 @@ export default function DashboardPage() {
                   </h5>
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
                     {selectedImages.map((url, i) => (
-                      <div key={i} className="aspect-square rounded-lg border border-slate-100 overflow-hidden bg-slate-50">
-                        <img src={url} alt="" className="w-full h-full object-cover" />
+                      <div key={i} className="aspect-[3/4] rounded-lg border border-slate-100 overflow-hidden bg-slate-100">
+                        <img src={url} alt="" className="w-full h-full object-contain" />
                       </div>
                     ))}
+                  </div>
+                </div>
+
+                {/* Shipping Address */}
+                <div className="bg-white border border-slate-200 rounded-lg p-6">
+                  <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+                    <div>
+                      <h5 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Shipping Address</h5>
+                      <p className="text-[11px] text-slate-400 mt-1">Optional — leave blank for school pickup.</p>
+                    </div>
+                    {/* Zone match status */}
+                    {zoneChecking && (
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Checking…
+                      </span>
+                    )}
+                    {!zoneChecking && matchedZone && (
+                      <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full uppercase tracking-wider">
+                        ✓ {matchedZone.name} — ${matchedZone.charge.toFixed(2)}
+                      </span>
+                    )}
+                    {!zoneChecking && zoneChecked && !matchedZone && (
+                      <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-2 py-1 rounded-full uppercase tracking-wider">
+                        No zone match — admin will set
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      value={shipAddr.fullName}
+                      onChange={e => setShipAddr({ ...shipAddr, fullName: e.target.value })}
+                      placeholder="Full Name"
+                      className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-2 focus:ring-blue-50"
+                    />
+                    <input
+                      value={shipAddr.phone}
+                      onChange={e => setShipAddr({ ...shipAddr, phone: e.target.value })}
+                      placeholder="Phone (optional)"
+                      className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-2 focus:ring-blue-50"
+                    />
+                    <input
+                      value={shipAddr.line1}
+                      onChange={e => setShipAddr({ ...shipAddr, line1: e.target.value })}
+                      placeholder="Street Address"
+                      className="sm:col-span-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-2 focus:ring-blue-50"
+                    />
+                    <input
+                      value={shipAddr.line2}
+                      onChange={e => setShipAddr({ ...shipAddr, line2: e.target.value })}
+                      placeholder="Apt / Suite (optional)"
+                      className="sm:col-span-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-2 focus:ring-blue-50"
+                    />
+                    <input
+                      value={shipAddr.city}
+                      onChange={e => setShipAddr({ ...shipAddr, city: e.target.value })}
+                      placeholder="City"
+                      className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-2 focus:ring-blue-50"
+                    />
+                    <input
+                      value={shipAddr.region}
+                      onChange={e => setShipAddr({ ...shipAddr, region: e.target.value })}
+                      placeholder="Province / State"
+                      className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-2 focus:ring-blue-50"
+                    />
+                    <input
+                      value={shipAddr.postalCode}
+                      onChange={e => setShipAddr({ ...shipAddr, postalCode: e.target.value })}
+                      placeholder="Postal Code"
+                      className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-2 focus:ring-blue-50 font-mono uppercase"
+                    />
+                    <input
+                      value={shipAddr.country}
+                      onChange={e => setShipAddr({ ...shipAddr, country: e.target.value })}
+                      placeholder="Country"
+                      className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-2 focus:ring-blue-50"
+                    />
                   </div>
                 </div>
 
                 {/* Notes */}
                 <div className="bg-white border border-slate-200 rounded-lg p-6">
                    <h5 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Special Instructions</h5>
-                   <textarea 
-                    value={orderNotes} 
-                    onChange={e => setOrderNotes(e.target.value)} 
+                   <textarea
+                    value={orderNotes}
+                    onChange={e => setOrderNotes(e.target.value)}
                     rows={3}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-[#155dfc] focus:ring-4 focus:ring-blue-50 transition-all resize-none"
-                    placeholder="Any specific delivery or printing instructions..." 
+                    placeholder="Any specific delivery or printing instructions..."
                   />
                 </div>
               </div>
 
               <div className="space-y-6">
                 {/* Summary Panel */}
+                {(() => {
+                  const subtotal = parseFloat(selectedPackage?.price || 0);
+                  const deadline = student.school?.orderDeadline ? new Date(student.school.orderDeadline) : null;
+                  const pastDeadline = deadline && new Date() > deadline;
+                  // Priority: matched zone > past-deadline school charge > 0
+                  const zoneShip = matchedZone ? Number(matchedZone.charge || 0) : 0;
+                  const fallbackShip = pastDeadline ? Number(student.school?.shippingCharge || 0) : 0;
+                  const shipping = zoneShip || fallbackShip;
+                  const shippingLabel = matchedZone
+                    ? matchedZone.name
+                    : (pastDeadline && fallbackShip > 0 ? 'After Deadline' : '');
+                  const total = subtotal + shipping;
+                  return (
                 <div className="bg-slate-900 rounded-lg p-6 text-white sticky top-28 shadow-2xl shadow-slate-300">
                   <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 mb-6">Final Total</h4>
-                  
+
                   <div className="space-y-4 mb-8">
                     <div className="flex justify-between text-slate-400 text-sm">
                       <span>Subtotal</span>
-                      <span className="font-bold text-white">${parseFloat(selectedPackage?.price || 0).toFixed(2)}</span>
+                      <span className="font-bold text-white">${subtotal.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-slate-400 text-sm">
-                      <span>Service Fee</span>
-                      <span className="font-bold text-white">$0.00</span>
+                      <span className="flex items-center gap-1.5">
+                        Shipping & Handling
+                        {shippingLabel && (
+                          <span className="text-[9px] font-black bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded uppercase tracking-wider">{shippingLabel}</span>
+                        )}
+                      </span>
+                      <span className="font-bold text-white">${shipping.toFixed(2)}</span>
                     </div>
                     <div className="h-px bg-slate-800" />
                     <div className="flex justify-between text-2xl font-black">
                       <span>Total</span>
-                      <span className="text-blue-400">${parseFloat(selectedPackage?.price || 0).toFixed(2)}</span>
+                      <span className="text-blue-400">${total.toFixed(2)}</span>
                     </div>
                   </div>
 
@@ -717,14 +942,16 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <button 
-                    onClick={placeOrder} 
+                  <button
+                    onClick={placeOrder}
                     disabled={placingOrder}
                     className="w-full py-4 bg-blue-600 text-white font-black rounded-lg hover:bg-blue-500 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg shadow-blue-900/20"
                   >
                     {placingOrder ? <><Loader2 className="w-5 h-5 animate-spin" /> PLACING ORDER...</> : <><BadgeCheck className="w-5 h-5" /> COMPLETE ORDER</>}
                   </button>
                 </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -795,14 +1022,27 @@ export default function DashboardPage() {
                   <Package className="w-4 h-4 text-slate-400" />
                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Package Details</h4>
                 </div>
-                <div className="flex justify-between items-center mb-4">
+                <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h4 className="text-lg font-black text-slate-900">{selectedOrder.package?.name}</h4>
+                    <h4 className="text-lg font-black text-slate-900">{selectedOrder.package?.name || selectedOrder.singleProduct?.name || '—'}</h4>
                     <p className="text-xs text-slate-500 mt-0.5">{selectedOrder.selectedImages?.length} photos included</p>
                   </div>
-                  <p className="text-2xl font-black text-[#155dfc]">${selectedOrder.totalAmount?.toFixed(2)}</p>
                 </div>
-                <div className="pt-4 border-t border-slate-100 flex justify-between items-center text-xs">
+                <div className="space-y-2 pt-2 border-t border-slate-100 text-sm">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Subtotal</span>
+                    <span className="font-semibold">${(selectedOrder.itemAmount ?? selectedOrder.totalAmount ?? 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Shipping & Handling</span>
+                    <span className="font-semibold">${(selectedOrder.shippingCharge ?? 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-slate-100 text-base font-black text-slate-900">
+                    <span>Total</span>
+                    <span className="text-[#155dfc]">${selectedOrder.totalAmount?.toFixed(2)}</span>
+                  </div>
+                </div>
+                <div className="pt-4 mt-3 border-t border-slate-100 flex justify-between items-center text-xs">
                   <span className="font-bold text-slate-500">Payment Status</span>
                   <span className="font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded">{selectedOrder.paymentStatus}</span>
                 </div>
@@ -927,7 +1167,7 @@ export default function DashboardPage() {
 
   /* ── Tickets List ── */
   const TicketsView = () => (
-    <div className="flex flex-col flex-1 w-full px-6 py-8 pb-32 lg:pb-12 animate-in fade-in duration-500">
+    <div className="flex flex-col flex-1 w-full px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 pb-28 lg:pb-12 animate-in fade-in duration-500">
       <div className="container mx-auto w-full">
         <div className="flex items-center justify-between mb-10">
           <div>
@@ -975,6 +1215,16 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex">
+      {lightboxIndex !== null && (
+        <PhotoLightbox
+          photos={allPhotos}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          // Only show selection controls while the user is in the order flow.
+          selectedUrls={view === 'order' ? selectedImages : undefined}
+          onToggleSelect={view === 'order' ? toggleImageSelection : undefined}
+        />
+      )}
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-72 bg-white border-r border-slate-200 sticky top-0 h-screen z-50">
         <div className="p-8">
@@ -1018,6 +1268,7 @@ export default function DashboardPage() {
             </h2>
           </div>
           <div className="flex items-center gap-6">
+             <NotificationBell onItemClick={handleNotificationClick} />
              <div className="text-right">
                 <p className="text-sm font-extrabold text-slate-900">{student.firstName} {student.lastName}</p>
                 <p className="text-[11px] text-slate-400 font-bold tracking-wider">REG: {student.studentId}</p>
@@ -1047,6 +1298,24 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Mobile Top Header — always visible (notifications + name) */}
+        <div className="lg:hidden sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 py-2.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            {student.uploadedImage ? (
+              <img src={student.uploadedImage} alt="" className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0" />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-xs font-black text-slate-400 border border-slate-200 shrink-0">
+                {student.firstName?.[0]}
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-slate-900 truncate leading-tight">{student.firstName} {student.lastName}</p>
+              <p className="text-[10px] text-slate-400 font-bold tracking-wider truncate">REG: {student.studentId}</p>
+            </div>
+          </div>
+          <NotificationBell />
+        </div>
+
         {/* Mobile Header for detail views */}
         {view !== "home" && view !== "tickets" && (
           <div className="lg:hidden p-4 bg-white border-b border-slate-100 flex items-center gap-4">
@@ -1056,12 +1325,12 @@ export default function DashboardPage() {
         )}
 
         {/* Content Area */}
-        <main className={`flex-1 overflow-y-auto ${view === "home" ? "" : "lg:p-8"}`}>
+        <main className={`flex-1 overflow-y-auto pb-24 lg:pb-0 ${view === "home" ? "" : "p-3 sm:p-4 lg:p-8"}`}>
           <div className="w-full">
-            {view === "home" && <HomeView />}
-            {view === "order" && <OrderView />}
-            {view === "order-history" && <OrderHistoryView />}
-            {view === "tickets" && <TicketsView />}
+            {view === "home" && HomeView()}
+            {view === "order" && OrderView()}
+            {view === "order-history" && OrderHistoryView()}
+            {view === "tickets" && TicketsView()}
             {view === "new-ticket" && <NewTicketForm subject={subject} setSubject={setSubject} message={message} setMessage={setMessage} onSubmit={createTicket} loading={submitting} />}
             {view === "ticket-detail" && <TicketDetail selectedTicket={selectedTicket} replyText={replyText} setReplyText={setReplyText} onSubmit={replyTicket} loading={submitting} msgEnd={msgEnd} />}
           </div>

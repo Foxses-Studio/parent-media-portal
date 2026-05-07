@@ -14,7 +14,13 @@ export default function LoginPage() {
   const axios = useAxios();
 
   const handleChange = (e) => {
-    setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+    let val = e.target.value;
+    // Access codes are 8-char alphanumeric (uppercase). Normalize so users
+    // can type lowercase or mix case and it still works.
+    if (e.target.name === 'uniqueCode') {
+      val = val.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    }
+    setForm((p) => ({ ...p, [e.target.name]: val }));
   };
 
   const handleSubmit = async (e) => {
@@ -120,11 +126,14 @@ export default function LoginPage() {
                   type={showCode ? "text" : "password"}
                   name="uniqueCode"
                   required
-                  maxLength={6}
+                  maxLength={8}
+                  minLength={8}
                   value={form.uniqueCode}
                   onChange={handleChange}
-                  placeholder="6-digit code"
-                  className="w-full pl-11 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl text-[15px] font-mono tracking-widest focus:ring-4 focus:ring-[#155dfc]/5 focus:border-[#155dfc] transition-all outline-none text-slate-800 shadow-sm"
+                  placeholder="8-character code"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full pl-11 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl text-[15px] font-mono tracking-widest uppercase focus:ring-4 focus:ring-[#155dfc]/5 focus:border-[#155dfc] transition-all outline-none text-slate-800 shadow-sm"
                 />
                 <button
                   type="button"
