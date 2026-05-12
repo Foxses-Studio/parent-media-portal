@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, KeyRound, Calendar, Loader2, GraduationCap, Eye, EyeOff } from "lucide-react";
 import useAxios from "@/hooks/useAxios";
@@ -12,6 +12,22 @@ export default function LoginPage() {
   const [showCode, setShowCode] = useState(false);
   const router = useRouter();
   const axios = useAxios();
+
+  // Prefill the access code if the QR code (or any link) carried ?code=… .
+  // Reading window.location directly (instead of useSearchParams) sidesteps
+  // Next.js's Suspense-boundary requirement during SSG builds.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('code');
+      if (!raw) return;
+      const normalized = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (normalized) {
+        setForm((p) => (p.uniqueCode ? p : { ...p, uniqueCode: normalized }));
+      }
+    } catch {}
+  }, []);
 
   const handleChange = (e) => {
     let val = e.target.value;
