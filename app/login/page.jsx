@@ -76,9 +76,7 @@ export default function LoginPage() {
         <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-[#000]/10 rounded-full blur-3xl" />
         
         <div className="relative z-10 max-w-lg">
-          <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-8 shadow-xl">
-            <GraduationCap className="w-12 h-12 text-white" />
-          </div>
+          <img src="/ContactSheet-Example.jpg" alt="Media Portal" className="h-24 w-auto object-contain rounded-2xl mb-8 shadow-2xl" />
           <h2 className="text-5xl font-extrabold text-white leading-tight mb-6">
             Everything you need <br />
             <span className="text-blue-200">in one place.</span>
@@ -106,9 +104,7 @@ export default function LoginPage() {
           
           {/* Header Section - Shown only on Mobile/Small Desktop or styled specifically */}
           <div className="mb-10 flex flex-col items-start">
-            <div className="lg:hidden w-12 h-12 bg-[#155dfc]/10 rounded-lg flex items-center justify-center mb-6">
-              <GraduationCap className="w-7 h-7 text-[#155dfc]" />
-            </div>
+            <img src="/ContactSheet-Example.jpg" alt="Media Portal" className="w-20 h-auto object-contain rounded-lg mb-6 shadow-lg" />
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Welcome back</h1>
             <p className="text-slate-500 text-sm mt-2">Please enter your details to sign in to your portal</p>
           </div>
