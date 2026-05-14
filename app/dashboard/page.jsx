@@ -7,7 +7,7 @@ import {
   ChevronRight, UploadCloud, Loader2, X, Plus, Printer, Mail, Trash2, 
   Send, Package, CreditCard, ArrowRight, ArrowLeft, Eye, BadgeCheck, Search,
   GraduationCap, Calendar, KeyRound, Ticket, Clock, Download, Activity,
-  MapPin, MessageSquare
+  MapPin, MessageSquare, Settings
 } from 'lucide-react';
 import useAxios from "@/hooks/useAxios";
 import Swal from "sweetalert2";
@@ -1412,48 +1412,63 @@ export default function DashboardPage() {
     </div>
   );
 
-  /* ── Tickets List ── */
-  const TicketsView = () => (
-    <div className="flex flex-col flex-1 w-full px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 pb-28 lg:pb-12 animate-in fade-in duration-500">
-      <div className="container mx-auto w-full">
-        <div className="flex items-center justify-between mb-10">
-          <div>
-            <h3 className="text-[22px] font-extrabold text-slate-900 tracking-tight">Support Tickets</h3>
-            <p className="text-slate-500 mt-1">Track and manage your inquiries.</p>
-          </div>
-          <button onClick={() => setView("new-ticket")} className="bg-[#155dfc] text-white px-6 py-3 rounded-[8px] text-sm font-bold flex items-center gap-2 hover:bg-blue-600 transition-all active:scale-95">
-            <Plus className="w-5 h-5" /> New Ticket
-          </button>
+  /* ── Support Hub (Unified View) ── */
+  const SupportHubView = () => (
+    <div className="flex flex-col lg:flex-row gap-6 h-full lg:h-[calc(100vh-140px)] animate-in fade-in duration-500 overflow-hidden">
+      {/* Sidebar: Ticket List */}
+      <div className={`flex flex-col w-full lg:w-80 bg-white border border-slate-200 rounded-xl overflow-hidden shrink-0 ${selectedTicket && view === 'ticket-detail' ? 'hidden lg:flex' : 'flex'}`}>
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+           <h3 className="font-bold text-slate-900">My Tickets</h3>
+           <button onClick={() => setView("new-ticket")} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors">
+             <Plus className="w-4 h-4" />
+           </button>
         </div>
-
-        {loadingTickets ? (
-          <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-[#155dfc] border-t-transparent rounded-full animate-spin" /></div>
-        ) : tickets.length === 0 ? (
-          <div className="text-center py-24 bg-white border border-slate-200 rounded-[8px]">
-            <MessagesSquare className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-            <p className="text-slate-400 font-medium">No support tickets found</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {tickets.map((t) => (
-              <button key={t._id} onClick={() => { setSelectedTicket(t); setView("ticket-detail"); }} className="w-full text-left p-6 bg-white border border-slate-200 rounded-[8px] hover:border-[#155dfc] transition-all group relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-[#155dfc]/5 rounded-bl-full -mr-8 -mt-8 transition-all group-hover:bg-[#155dfc]/10" />
-                <div className="flex justify-between items-start mb-4 relative z-10">
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${STATUS[t.status].bg} ${STATUS[t.status].text} border border-current opacity-70`}>
-                     {t.status}
+        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+          {loadingTickets ? (
+            <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-[#155dfc]" /></div>
+          ) : tickets.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 text-sm">No tickets found</div>
+          ) : (
+            tickets.map(t => (
+              <button 
+                key={t._id} 
+                onClick={() => { setSelectedTicket(t); setView("ticket-detail"); }}
+                className={`w-full text-left p-4 rounded-lg transition-all border ${selectedTicket?._id === t._id && view === 'ticket-detail' ? 'bg-blue-50 border-blue-100' : 'hover:bg-slate-50 border-transparent'}`}
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ${STATUS[t.status]?.bg || 'bg-slate-100'} ${STATUS[t.status]?.text || 'text-slate-500'}`}>
+                    {t.status}
                   </span>
-                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 uppercase tracking-widest">
-                    <Clock className="w-3.5 h-3.5" />
-                    {new Date(t.createdAt).toLocaleDateString()}
-                  </span>
+                  <span className="text-[10px] text-slate-400">{new Date(t.createdAt).toLocaleDateString()}</span>
                 </div>
-                <p className="font-extrabold text-slate-900 text-lg line-clamp-1 mb-2 relative z-10 group-hover:text-[#155dfc] transition-colors">{t.subject}</p>
-                <div className="flex items-center gap-2 text-slate-500">
-                  <p className="text-sm line-clamp-1 flex-1">{t.messages[t.messages.length - 1]?.message}</p>
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:translate-x-1 transition-transform" />
-                </div>
+                <p className="font-bold text-slate-900 text-sm truncate">{t.subject}</p>
+                <p className="text-xs text-slate-500 truncate mt-1">{t.messages[t.messages.length - 1]?.message}</p>
               </button>
-            ))}
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Main Content: Detail or Placeholder */}
+      <div className={`flex-1 bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col ${!selectedTicket || view !== 'ticket-detail' ? 'hidden lg:flex' : 'flex'}`}>
+        {selectedTicket && view === 'ticket-detail' ? (
+          <TicketDetail 
+            selectedTicket={selectedTicket} 
+            replyText={replyText} 
+            setReplyText={setReplyText} 
+            replyFiles={replyFiles} 
+            setReplyFiles={setReplyFiles} 
+            onSubmit={replyTicket} 
+            loading={submitting} 
+            msgEnd={msgEnd} 
+          />
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center p-10 text-center bg-slate-50/30">
+            <div className="w-20 h-20 bg-white border border-slate-100 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
+              <MessagesSquare className="w-10 h-10 text-blue-200" />
+            </div>
+            <h4 className="font-bold text-slate-900 text-lg">Select a ticket</h4>
+            <p className="text-sm text-slate-400 mt-2 max-w-xs mx-auto">Select a support ticket from the list to view the conversation and reply.</p>
           </div>
         )}
       </div>
@@ -1488,7 +1503,7 @@ export default function DashboardPage() {
           <img
             src={orderLightboxUrl}
             alt=""
-            className="max-w-[95vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            className="max-w-[95vw] max-h-[90vh] object-contain rounded-lg"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -1505,7 +1520,8 @@ export default function DashboardPage() {
           <SidebarLink active={view === "home"} onClick={() => setView("home")} icon={<User className="w-5 h-5" />} label="Overview" />
           <SidebarLink active={view === "order"} onClick={() => { resetOrder(); setView("order"); }} icon={<ShoppingBag className="w-5 h-5" />} label="Order Photos" />
           <SidebarLink active={view === "order-history"} onClick={() => { setSelectedOrder(null); setView("order-history"); }} icon={<History className="w-5 h-5" />} label="Order History" />
-          <SidebarLink active={view === "tickets" || view === "new-ticket" || view === "ticket-detail"} onClick={() => setView("tickets")} icon={<MessagesSquare className="w-5 h-5" />} label="Support Hub" badge={openCount} />
+          <SidebarLink active={view === "tickets"} onClick={() => setView("tickets")} icon={<MessagesSquare className="w-5 h-5" />} label="Support Hub" badge={openCount} />
+          <SidebarLink active={view === "settings"} onClick={() => setView("settings")} icon={<Settings className="w-5 h-5" />} label="Settings" />
         </nav>
 
         <div className="p-6 border-t border-slate-100 bg-slate-50/50">
@@ -1526,7 +1542,7 @@ export default function DashboardPage() {
         <header className="hidden lg:flex items-center justify-between px-10 py-5 bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40">
           <div>
             <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">
-              {view === "home" ? "Portal Overview" : view === "order" ? "Order Photos" : view === "order-history" ? "My Orders" : view === "tickets" ? "Customer Support" : "Details"}
+              {view === "home" ? "Portal Overview" : view === "order" ? "Order Photos" : view === "order-history" ? "My Orders" : view === "tickets" ? "Customer Support" : view === "settings" ? "Account Settings" : "Details"}
             </h2>
           </div>
           <div className="flex items-center gap-6">
@@ -1555,7 +1571,7 @@ export default function DashboardPage() {
              <div className="relative">
                <div className="absolute inset-0 bg-blue-500 rounded-full blur-md opacity-20" />
                {student.uploadedImage ? (
-                  <img src={student.uploadedImage} className="relative w-11 h-11 rounded-full object-cover border-2 border-white shadow-md" alt="" />
+                  <img src={student.uploadedImage} className="relative w-11 h-11 rounded-full object-cover border-2 border-white" alt="" />
                ) : (
                   <div className="relative w-11 h-11 rounded-full bg-slate-100 flex items-center justify-center text-xs font-black text-slate-400 border-2 border-white">{student.firstName?.[0]}</div>
                )}
@@ -1569,7 +1585,7 @@ export default function DashboardPage() {
             <NavBtn active={view === "home"} onClick={() => setView("home")} icon={<User className="w-6 h-6" />} label="Profile" />
             <NavBtn active={view === "order"} onClick={() => { resetOrder(); setView("order"); }} icon={<ShoppingBag className="w-6 h-6" />} label="Order" />
             <NavBtn active={view === "order-history"} onClick={() => { setSelectedOrder(null); setView("order-history"); }} icon={<History className="w-6 h-6" />} label="History" />
-            <NavBtn active={view === "tickets"} onClick={() => setView("tickets")} icon={<MessagesSquare className="w-6 h-6" />} label="Support" badge={openCount} />
+            <NavBtn active={view === "settings"} onClick={() => setView("settings")} icon={<Settings className="w-6 h-6" />} label="Settings" />
             <button onClick={logout} className="flex flex-col items-center gap-1 text-slate-400 hover:text-red-500 transition-colors">
               <LogOut className="w-6 h-6" />
               <span className="text-[10px] font-bold mt-1">Logout</span>
@@ -1604,14 +1620,13 @@ export default function DashboardPage() {
         )}
 
         {/* Content Area */}
-        <main className={`flex-1 overflow-y-auto pb-24 lg:pb-0 ${view === "home" ? "" : "p-3 sm:p-4 lg:p-8"}`}>
-          <div className="w-full">
+        <main className={`flex-1 ${view === 'home' || view === 'order' || view === 'order-history' ? 'overflow-y-auto' : 'overflow-hidden'} pb-24 lg:pb-0 ${view === "home" ? "" : "p-3 sm:p-4 lg:p-8"}`}>
+          <div className="w-full h-full">
             {view === "home" && HomeView()}
             {view === "order" && OrderView()}
             {view === "order-history" && OrderHistoryView()}
-            {view === "tickets" && TicketsView()}
-            {view === "new-ticket" && <NewTicketForm subject={subject} setSubject={setSubject} message={message} setMessage={setMessage} files={newTicketFiles} setFiles={setNewTicketFiles} onSubmit={createTicket} loading={submitting} />}
-            {view === "ticket-detail" && <TicketDetail selectedTicket={selectedTicket} replyText={replyText} setReplyText={setReplyText} replyFiles={replyFiles} setReplyFiles={setReplyFiles} onSubmit={replyTicket} loading={submitting} msgEnd={msgEnd} />}
+            {(view === "tickets" || view === "ticket-detail") && SupportHubView()}
+            {view === "new-ticket" && <div className="h-full overflow-y-auto"><NewTicketForm subject={subject} setSubject={setSubject} message={message} setMessage={setMessage} files={newTicketFiles} setFiles={setNewTicketFiles} onSubmit={createTicket} loading={submitting} /></div>}
           </div>
         </main>
       </div>
@@ -1667,7 +1682,7 @@ function DetailCard({ label, value, icon, color }) {
 
 function DetailCardFull({ label, value, icon }) {
   return (
-    <div className="flex items-center gap-4 p-4 bg-white border border-slate-100 rounded-lg shadow-sm">
+    <div className="flex items-center gap-4 p-4 bg-white border border-slate-100 rounded-lg">
       <div className="bg-slate-50 p-3 rounded-lg text-slate-400">{icon}</div>
       <div>
         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
@@ -1727,7 +1742,7 @@ function NewTicketForm({ subject, setSubject, message, setMessage, files, setFil
           </div>
         )}
       </div>
-      <button type="submit" disabled={loading} className="w-full py-4 bg-[#155dfc] text-white font-bold rounded-lg shadow-lg shadow-blue-100 active:scale-[0.98] transition-all disabled:opacity-50">
+      <button type="submit" disabled={loading} className="w-full py-4 bg-[#155dfc] text-white font-bold rounded-lg active:scale-[0.98] transition-all disabled:opacity-50">
         {loading ? "Submitting..." : "Send Ticket"}
       </button>
     </form>
@@ -1746,7 +1761,7 @@ function TicketDetail({ selectedTicket, replyText, setReplyText, replyFiles, set
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 border border-slate-200 rounded-lg overflow-hidden lg:h-[600px]">
+    <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
       {/* Header */}
       <div className="bg-white px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
         <div>
@@ -1776,7 +1791,7 @@ function TicketDetail({ selectedTicket, replyText, setReplyText, replyFiles, set
                   {new Date(m.createdAt || selectedTicket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
-              <div className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
+              <div className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed ${
                 isParent
                   ? "bg-[#155dfc] text-white rounded-tr-sm"
                   : "bg-white text-slate-800 border border-slate-200 rounded-tl-sm"
@@ -1877,6 +1892,145 @@ function TicketDetail({ selectedTicket, replyText, setReplyText, replyFiles, set
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function SettingsView({ student, user, onLogout }) {
+  const axios = useAxios();
+  const [requesting, setRequesting] = useState(false);
+
+  const requestReset = async () => {
+    if (!user?.email) return;
+    setRequesting(true);
+    try {
+      await axios.post('/auth/forgot-password', { email: user.email });
+      Swal.fire({
+        icon: 'success',
+        title: 'Reset Link Sent',
+        text: `We've sent a password reset link to ${user.email}`,
+        confirmButtonColor: '#155dfc'
+      });
+    } catch (err) {
+      Swal.fire('Error', err.response?.data?.message || 'Failed to send reset email', 'error');
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col flex-1 w-full p-6 lg:p-8 animate-in fade-in duration-500 max-w-5xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-200">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center">
+            <Settings className="w-7 h-7 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Account Settings</h1>
+            <p className="text-slate-500 text-sm font-medium">Manage your profile and portal preferences.</p>
+          </div>
+        </div>
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-2 px-6 py-3 bg-white border border-red-100 text-red-600 text-sm font-bold rounded-xl hover:bg-red-50 transition-all active:scale-95"
+        >
+          <LogOut className="w-4 h-4" /> Sign Out
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Profile Card */}
+        <div className="lg:col-span-1 space-y-6">
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="h-24 bg-gradient-to-r from-[#155dfc] to-blue-800"></div>
+            <div className="px-6 pb-8 text-center -mt-12">
+              <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-white p-1.5 mb-4">
+                {student?.uploadedImage ? (
+                  <img src={student.uploadedImage} className="w-full h-full rounded-full object-cover" alt="" />
+                ) : (
+                  <div className="w-full h-full rounded-full bg-slate-100 flex items-center justify-center text-2xl font-black text-slate-400">
+                    {student?.firstName?.[0]}
+                  </div>
+                )}
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 leading-tight">{student?.firstName} {student?.lastName}</h3>
+              <p className="text-sm text-slate-500 font-medium mt-1">{user?.email}</p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-blue-50 text-[10px] font-black uppercase tracking-widest text-[#155dfc]">
+                  Student ID: {student?.studentId}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Security Card */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                <KeyRound className="w-5 h-5 text-[#155dfc]" />
+              </div>
+              <h3 className="font-bold text-slate-900">Security</h3>
+            </div>
+            <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+              If you've set a password previously, you can request a reset link via your registered email.
+            </p>
+            <button
+              onClick={requestReset}
+              disabled={requesting}
+              className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-[#155dfc] text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50"
+            >
+              {requesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              Request Reset Link
+            </button>
+          </div>
+        </div>
+
+        {/* Details Card */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-white border border-slate-200 rounded-2xl">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-2 bg-slate-50/30">
+              <User className="w-4 h-4 text-slate-400" />
+              <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Account Information</h2>
+            </div>
+            <div className="p-8 space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-y-8 gap-x-12">
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Parent Email</p>
+                  <p className="text-base font-bold text-slate-800">{user?.email || '—'}</p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Linked Student</p>
+                  <p className="text-base font-bold text-slate-800">{student?.firstName} {student?.lastName}</p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">School</p>
+                  <p className="text-base font-bold text-slate-800">{student?.school?.name || '—'}</p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Registration ID</p>
+                  <p className="text-base font-bold text-slate-800 font-mono tracking-tight">{student?.studentId}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Support Section */}
+          <div className="bg-slate-900 rounded-2xl p-8 text-white relative overflow-hidden">
+             <div className="relative z-10">
+               <h3 className="text-xl font-bold mb-2">Need help with your account?</h3>
+               <p className="text-slate-400 text-sm mb-6 max-w-md">Our support team is available to assist you with photo orders, student linkage, or portal access issues.</p>
+               <div className="flex flex-wrap gap-4">
+                  <a href="mailto:support@mediaportal.com" className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-lg text-sm font-bold transition-all">
+                    Email Support
+                  </a>
+                  <p className="text-xs text-slate-500 self-center">Avg. response time: 2-4 hours</p>
+               </div>
+             </div>
+             <MessagesSquare className="absolute -right-8 -bottom-8 w-48 h-48 text-white/5 -rotate-12" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

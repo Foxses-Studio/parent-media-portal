@@ -104,7 +104,6 @@ export default function LoginPage() {
           
           {/* Header Section - Shown only on Mobile/Small Desktop or styled specifically */}
           <div className="mb-10 flex flex-col items-start">
-            <img src="/ContactSheet-Example.jpg" alt="Media Portal" className="w-20 h-auto object-contain rounded-lg mb-6 shadow-lg" />
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Welcome back</h1>
             <p className="text-slate-500 text-sm mt-2">Please enter your details to sign in to your portal</p>
           </div>
